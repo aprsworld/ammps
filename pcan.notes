@@ -1,0 +1,14 @@
+modprobe pcan bitrate=0x011c
+ifconfig can0 up
+sudo echo "i 0x011c e" > /dev/pcanusb0
+
+add the following line below the install line in /etc/modprobe.d/pcan.conf (note that the hex character needs to be upper case ... WTF?)
+options pcan bitrate=0x011C
+
+/etc/udev/rules.d/45-pcan.rules could bring up can0 interface
+
+
+
+https://lh5.googleusercontent.com/-fUrRJeBjN58/UCT8ZdHXyCI/AAAAAAAAAB4/zkpKoJek39o/w497-h373/SocketCAN-logo.png
+
+
