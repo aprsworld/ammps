@@ -13,6 +13,10 @@
 #include <signal.h>
 #include <getopt.h>
 
+#include <string.h>
+#include <netinet/in.h>
+#include <netdb.h> 
+
 extern char *optarg;
 extern int optind, opterr, optopt;
 
@@ -29,9 +33,11 @@ extern int optind, opterr, optopt;
 /* signal handler installed in main */
 void sighandler(int signum) {
 	if ( SIGALRM == signum ) {
-		fprintf(stderr,"\n# Timeout while waiting for data.\n");
+		fprintf(stderr,"\n# Timeout while waiting for CAN data.\n");
+	} else if ( SIGPIPE == signum ) {
+		fprintf(stderr,"\n# Broken pipe to TCP server.\n");
 	} else {
-		fprintf(stderr,"\n# Caught signal %d.\n",signum);
+		fprintf(stderr,"\n# Caught unexpected signal %d.\n",signum);
 	}
 
 	fprintf(stderr,"# Terminating.\n");
@@ -46,18 +52,43 @@ int main(int argc, char **argv) {
 	int outputDebug=0;
 
 	char canInterface[128];
+
+	int sockfd;
+	char tcpHost[256];
+	int tcpPort;
+
+	struct sockaddr_in serveraddr;
+	struct hostent *server;
+	char buf[256];
+	
+	/* set initail values */
 	strcpy(canInterface,"can0");
+	strcpy(tcpHost,"localhost");
+	tcpPort=4010;
+
 
 	signal(SIGALRM, sighandler);
+	signal(SIGPIPE, sighandler);
 
-	while ((n = getopt (argc, argv, "a:hi:v")) != -1) {
+	while ((n = getopt (argc, argv, "a:hi:vt:p:")) != -1) {
 		switch (n) {
 			case 'a':
 				alarmSeconds=atoi(optarg);
 				fprintf(stdout,"# terminate program after %d seconds without receiving data\n",alarmSeconds);
 				break;
+			case 'p':
+				tcpPort=atoi(optarg);
+				fprintf(stdout,"# TCP server port = %d\n",tcpPort);
+				break;
+			case 't':
+				strncpy(tcpHost,optarg,sizeof(tcpHost));
+				tcpHost[sizeof(tcpHost)-1]='\0';
+				fprintf(stderr,"# TCP server hostname = %s\n",tcpHost);
+				break;
 			case 'h':
 				fprintf(stdout,"# -a seconds\tTerminate after seconds without data\n");
+				fprintf(stdout,"# -t tcpHost\tTCP server hostname\n");
+				fprintf(stdout,"# -p tcpPort\tTCP server port number\n");
 				fprintf(stdout,"# -v\tOutput verbose / debugging to stderr\n");
 				fprintf(stdout,"#\n");
 				fprintf(stdout,"# -h\tThis help message then exit\n");
@@ -81,7 +112,7 @@ int main(int argc, char **argv) {
 	}
 
 
-	/* Create the socket */
+	/* Create the CAN socket */
 	int skt = socket( PF_CAN, SOCK_RAW, CAN_RAW );
  
 	/* Locate the interface you wish to use */
@@ -101,7 +132,35 @@ int main(int argc, char **argv) {
 		return 1;
 	}
 	if ( outputDebug) fprintf(stderr,"done\n");
- 
+
+
+	/* setup TCP connection */
+	sockfd = socket(AF_INET, SOCK_STREAM, 0);
+	if (sockfd < 0) {
+		fprintf(stderr,"\n# Error opening TCP socket. Bye.\n");
+		return 1;
+	}
+
+	/* gethostbyname: get the server's DNS entry */
+	/* BUG FIXME gethostbyname not working */
+	server = gethostbyname(tcpHost);
+	if ( NULL == server ) {
+		fprintf(stderr,"\n# No such hostname %s.\n",tcpHost);
+		return 2;
+	}
+
+	/* Construct the server sockaddr_in structure */
+	memset(&serveraddr, 0, sizeof(serveraddr));			/* Clear struct */
+	serveraddr.sin_family = AF_INET;							/* Internet/IP */
+	serveraddr.sin_addr.s_addr = inet_addr(tcpHost);	/* IP address */
+	serveraddr.sin_port = htons(tcpPort);					/* server port */
+
+	/* Establish connection */
+	if ( connect(sockfd, (struct sockaddr *) &serveraddr, sizeof(serveraddr)) < 0) {
+		fprintf(stderr,"\n#Error connecting to TCP server %s:%d. Bye.\n",tcpHost,tcpPort);
+		return 3;
+	}
+
  	for ( n=0 ; ; n++ ) {
 		struct can_frame frame;
 
@@ -111,8 +170,8 @@ int main(int argc, char **argv) {
 		alarm(alarmSeconds);
 
 
-		memset(&frame, 0, sizeof(struct can_frame));
 		/* Read a message back from the CAN bus */
+		memset(&frame, 0, sizeof(struct can_frame));
 		if ( outputDebug) fprintf(stderr,"# Reading (n=%d) from CAN bus ... ",n);
 		bytes_read = read( skt, &frame, sizeof(frame) );
 		if ( outputDebug) fprintf(stderr," done (%d bytes read)\n",bytes_read);
@@ -125,11 +184,19 @@ int main(int argc, char **argv) {
 			for ( i=0 ; i<frame.can_dlc ; i++ ) {
 				fprintf(stdout,"# frame.data[%d]=0x%02x\n",i,frame.data[i]);
 			}
+
 			fprintf(stdout,"\n\n");
 			fflush(stdout);
-		}
 
-	
+			sprintf(buf,"# n=%d\n",n);
+
+			/* send the message line to the server */
+			int nb = write(sockfd, buf, strlen(buf));
+			if ( nb < 0 ) {
+				fprintf(stderr,"\n# Write returned %d.\n",nb);
+				return 4;
+			}
+		}
 	}
 
 	return 0;

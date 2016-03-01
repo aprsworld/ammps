@@ -5,7 +5,7 @@
 #include <sys/socket.h>
 #include <sys/ioctl.h>
 #include <net/if.h>
- 
+
 #include <linux/can.h>
 #include <linux/can/raw.h>
 #include <string.h>
@@ -20,12 +20,12 @@
 extern char *optarg;
 extern int optind, opterr, optopt;
 
- 
+
 /* At time of writing, these constants are not defined in the headers */
 #ifndef PF_CAN
 #define PF_CAN 29
 #endif
- 
+
 #ifndef AF_CAN
 #define AF_CAN PF_CAN
 #endif
@@ -33,16 +33,20 @@ extern int optind, opterr, optopt;
 #define SIGNAL_GENERATOR_RUN_OPEN_CONTACTOR   SIGUSR1
 #define SIGNAL_GENERATOR_RUN_CLOSED_CONTACTOR SIGUSR2
 #define SIGNAL_GENERATOR_STOP                 SIGURG
+int generatorRequestedState;
 
 
 /* signal handler installed in main */
 void sighandler(int signum) {
 	if (  SIGNAL_GENERATOR_RUN_OPEN_CONTACTOR == signum ) {
-		fprintf(stderr,"\n# Caught SIGNAL_GENERATOR_RUN_OPEN_CONTACTOR.\n");
+		fprintf(stderr,"\n# Caught SIGNAL_GENERATOR_RUN_OPEN_CONTACTOR signal.\n");
+		generatorRequestedState=SIGNAL_GENERATOR_RUN_OPEN_CONTACTOR;
 	} else if (  SIGNAL_GENERATOR_RUN_CLOSED_CONTACTOR == signum ) {
-		fprintf(stderr,"\n# Caught SIGNAL_GENERATOR_RUN_CLOSED_CONTACTOR.\n");
+		fprintf(stderr,"\n# Caught SIGNAL_GENERATOR_RUN_CLOSED_CONTACTOR signal.\n");
+		generatorRequestedState=SIGNAL_GENERATOR_RUN_CLOSED_CONTACTOR;
 	} else if (  SIGNAL_GENERATOR_STOP == signum ) {
-		fprintf(stderr,"\n# Caught SIGNAL_GENERATOR_STOP.\n");
+		fprintf(stderr,"\n# Caught SIGNAL_GENERATOR_STOP signal.\n");
+		generatorRequestedState=SIGNAL_GENERATOR_STOP;
 	} else {
 		fprintf(stderr,"\n# Caught unexpected signal %d.\n",signum);
 		fprintf(stderr,"# Terminating.\n");
@@ -62,6 +66,7 @@ int main(int argc, char **argv) {
 
 	/* set initial values */
 	strcpy(canInterface,"can0");
+	generatorRequestedState=SIGNAL_GENERATOR_STOP;
 
 
 	signal(SIGALRM, sighandler);
@@ -77,7 +82,7 @@ int main(int argc, char **argv) {
 		switch (n) {
 			case 'd':
 				delaySeconds=atoi(optarg);
-				fprintf(stdout,"# %d second delay between sending CAN commands\n",alarmSeconds);
+				fprintf(stdout,"# %d second delay between sending CAN commands\n",delaySeconds);
 				break;
 			case 'h':
 				fprintf(stdout,"# -d seconds\tdelay between CAN commands\n");
@@ -106,14 +111,14 @@ int main(int argc, char **argv) {
 
 	/* Create the CAN socket */
 	int skt = socket( PF_CAN, SOCK_RAW, CAN_RAW );
- 
+
 	/* Locate the interface you wish to use */
 	if ( outputDebug) fprintf(stderr,"# Locating interface %s ... ",canInterface);
 	struct ifreq ifr;
 	strcpy(ifr.ifr_name, canInterface);
 	ioctl(skt, SIOCGIFINDEX, &ifr); /* ifr.ifr_ifindex gets filled  with that device's index */
 	if ( outputDebug) fprintf(stderr,"done\n");
- 
+
 	/* Select that CAN interface, and bind the socket to it. */
 	if ( outputDebug) fprintf(stderr,"# Binding to interface ... ");
 	struct sockaddr_can addr;
@@ -125,34 +130,41 @@ int main(int argc, char **argv) {
 	}
 	if ( outputDebug) fprintf(stderr,"done\n");
 
- 	for ( n=0 ; ; n++ ) {
+	for ( n=0 ; ; n++ ) {
 		struct can_frame frame;
 
 		printf("## sleeping 10 seconds\n");
 		sleep(10);
 
+		if (  SIGNAL_GENERATOR_RUN_OPEN_CONTACTOR == generatorRequestedState ) {
+			printf("# sending GENERATOR_RUN_OPEN_CONTACTOR CAN message\n");
+		} else if (  SIGNAL_GENERATOR_RUN_CLOSED_CONTACTOR == generatorRequestedState ) {
+			printf("# sending GENERATOR_RUN_CLOSED_CONTACTOR CAN message\n");
+		} else {
+			printf("# sending GENERATOR_STOP CAN message\n");
+		}
 
 #if 0
-		/* Read a message back from the CAN bus */
-		memset(&frame, 0, sizeof(struct can_frame));
-		if ( outputDebug) fprintf(stderr,"# Reading (n=%d) from CAN bus ... ",n);
-		bytes_read = read( skt, &frame, sizeof(frame) );
-		if ( outputDebug) fprintf(stderr," done (%d bytes read)\n",bytes_read);
+			/* Read a message back from the CAN bus */
+			memset(&frame, 0, sizeof(struct can_frame));
+			if ( outputDebug) fprintf(stderr,"# Reading (n=%d) from CAN bus ... ",n);
+			bytes_read = read( skt, &frame, sizeof(frame) );
+			if ( outputDebug) fprintf(stderr," done (%d bytes read)\n",bytes_read);
 
-		if ( outputDebug ) {
-			/* strip extended off */
-			fprintf(stdout,"# frame.can_id =0x%08x\n",frame.can_id ^ CAN_EFF_FLAG);
-			fprintf(stdout,"# frame.can_dlc=%d\n",frame.can_dlc);
+			if ( outputDebug ) {
+				/* strip extended off */
+				fprintf(stdout,"# frame.can_id =0x%08x\n",frame.can_id ^ CAN_EFF_FLAG);
+				fprintf(stdout,"# frame.can_dlc=%d\n",frame.can_dlc);
 
-			for ( i=0 ; i<frame.can_dlc ; i++ ) {
-				fprintf(stdout,"# frame.data[%d]=0x%02x\n",i,frame.data[i]);
+				for ( i=0 ; i<frame.can_dlc ; i++ ) {
+					fprintf(stdout,"# frame.data[%d]=0x%02x\n",i,frame.data[i]);
+				}
+
+				fprintf(stdout,"\n\n");
+				fflush(stdout);
 			}
-
-			fprintf(stdout,"\n\n");
-			fflush(stdout);
-		}
 #endif
-	}
+		}
 
-	return 0;
-}
+		return 0;
+	}
