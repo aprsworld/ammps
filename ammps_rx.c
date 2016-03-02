@@ -5,7 +5,7 @@
 #include <sys/socket.h>
 #include <sys/ioctl.h>
 #include <net/if.h>
- 
+
 #include <linux/can.h>
 #include <linux/can/raw.h>
 #include <string.h>
@@ -20,12 +20,12 @@
 extern char *optarg;
 extern int optind, opterr, optopt;
 
- 
+
 /* At time of writing, these constants are not defined in the headers */
 #ifndef PF_CAN
 #define PF_CAN 29
 #endif
- 
+
 #ifndef AF_CAN
 #define AF_CAN PF_CAN
 #endif
@@ -46,7 +46,7 @@ void sighandler(int signum) {
 
 int main(int argc, char **argv) {
 	int bytes_read, bytes_sent;
-	int alarmSeconds=0;
+	int alarmSeconds=5;
 	int i,n;
 
 	int outputDebug=0;
@@ -60,7 +60,7 @@ int main(int argc, char **argv) {
 	struct sockaddr_in serveraddr;
 	struct hostent *server;
 	char buf[256];
-	
+
 	/* set initail values */
 	strcpy(canInterface,"can0");
 	strcpy(tcpHost,"localhost");
@@ -114,14 +114,14 @@ int main(int argc, char **argv) {
 
 	/* Create the CAN socket */
 	int skt = socket( PF_CAN, SOCK_RAW, CAN_RAW );
- 
+
 	/* Locate the interface you wish to use */
 	if ( outputDebug) fprintf(stderr,"# Locating interface %s ... ",canInterface);
 	struct ifreq ifr;
 	strcpy(ifr.ifr_name, canInterface);
 	ioctl(skt, SIOCGIFINDEX, &ifr); /* ifr.ifr_ifindex gets filled  with that device's index */
 	if ( outputDebug) fprintf(stderr,"done\n");
- 
+
 	/* Select that CAN interface, and bind the socket to it. */
 	if ( outputDebug) fprintf(stderr,"# Binding to interface ... ");
 	struct sockaddr_can addr;
@@ -142,7 +142,6 @@ int main(int argc, char **argv) {
 	}
 
 	/* gethostbyname: get the server's DNS entry */
-	/* BUG FIXME gethostbyname not working */
 	server = gethostbyname(tcpHost);
 	if ( NULL == server ) {
 		fprintf(stderr,"\n# No such hostname %s.\n",tcpHost);
@@ -152,7 +151,7 @@ int main(int argc, char **argv) {
 	/* Construct the server sockaddr_in structure */
 	memset(&serveraddr, 0, sizeof(serveraddr));			/* Clear struct */
 	serveraddr.sin_family = AF_INET;							/* Internet/IP */
-	serveraddr.sin_addr.s_addr = inet_addr(tcpHost);	/* IP address */
+	serveraddr.sin_addr = *(struct in_addr *) server->h_addr;
 	serveraddr.sin_port = htons(tcpPort);					/* server port */
 
 	/* Establish connection */
@@ -161,7 +160,7 @@ int main(int argc, char **argv) {
 		return 3;
 	}
 
- 	for ( n=0 ; ; n++ ) {
+	for ( n=0 ; ; n++ ) {
 		struct can_frame frame;
 
 		/* cancel pending alarm */
