@@ -13,9 +13,9 @@
 #include <signal.h>
 #include <getopt.h>
 
-#include <string.h>
-#include <netinet/in.h>
-#include <netdb.h> 
+#include <sys/select.h>
+#include <errno.h>
+
 
 extern char *optarg;
 extern int optind, opterr, optopt;
@@ -30,46 +30,55 @@ extern int optind, opterr, optopt;
 #define AF_CAN PF_CAN
 #endif
 
-#define SIGNAL_GENERATOR_RUN_OPEN_CONTACTOR   SIGUSR1
-#define SIGNAL_GENERATOR_RUN_CLOSED_CONTACTOR SIGUSR2
-#define SIGNAL_GENERATOR_STOP                 SIGURG
+#define SIGNAL_GENERATOR_RUN_OPEN_CONTACTOR   SIGUSR1 /* send 0x65 FF FF FF FF FF FF FF to 0x18FF1610 */
+#define SIGNAL_GENERATOR_RUN_CLOSED_CONTACTOR SIGUSR2 /* send 0xA5 FF FF FF FF FF FF FF to 0x18FF1610 */
+#define SIGNAL_GENERATOR_STOP                 SIGURG  /* send 0x55 FF FF FF FF FF FF FF to 0x18FF1610 */
 int generatorRequestedState;
 
 
 /* signal handler installed in main */
 void sighandler(int signum) {
-	if (  SIGNAL_GENERATOR_RUN_OPEN_CONTACTOR == signum ) {
+	if ( SIGPIPE == signum ) {
+		fprintf(stderr,"\n# Caught SIGPIPE. Broken pipe for sending CAN data.\n");
+		fprintf(stderr,"# Terminating.\n");
+		exit(2);
+	} else if ( SIGNAL_GENERATOR_RUN_OPEN_CONTACTOR == signum ) {
 		fprintf(stderr,"\n# Caught SIGNAL_GENERATOR_RUN_OPEN_CONTACTOR signal.\n");
 		generatorRequestedState=SIGNAL_GENERATOR_RUN_OPEN_CONTACTOR;
-	} else if (  SIGNAL_GENERATOR_RUN_CLOSED_CONTACTOR == signum ) {
+	} else if ( SIGNAL_GENERATOR_RUN_CLOSED_CONTACTOR == signum ) {
 		fprintf(stderr,"\n# Caught SIGNAL_GENERATOR_RUN_CLOSED_CONTACTOR signal.\n");
 		generatorRequestedState=SIGNAL_GENERATOR_RUN_CLOSED_CONTACTOR;
-	} else if (  SIGNAL_GENERATOR_STOP == signum ) {
+	} else if ( SIGNAL_GENERATOR_STOP == signum ) {
 		fprintf(stderr,"\n# Caught SIGNAL_GENERATOR_STOP signal.\n");
 		generatorRequestedState=SIGNAL_GENERATOR_STOP;
 	} else {
 		fprintf(stderr,"\n# Caught unexpected signal %d.\n",signum);
 		fprintf(stderr,"# Terminating.\n");
-		exit(2);
+		exit(3);
 	}
 
 }
 
 int main(int argc, char **argv) {
+	struct timeval t;
 	int bytes_read, bytes_sent;
-	int delaySeconds=0;
+	int delayMilliseconds;
 	int i,n;
+	int resetTimeout=1;
 
 	int outputDebug=0;
 
 	char canInterface[128];
 
+	struct can_frame frame;
+
 	/* set initial values */
 	strcpy(canInterface,"can0");
 	generatorRequestedState=SIGNAL_GENERATOR_STOP;
+	delayMilliseconds=500;
 
 
-	signal(SIGALRM, sighandler);
+	/* write gives a SIGPIPE */
 	signal(SIGPIPE, sighandler);
 	/* signals we are expecting from external source that will cause us to
 	 * send appropriate CAN messages to generator 
@@ -81,11 +90,11 @@ int main(int argc, char **argv) {
 	while ((n = getopt (argc, argv, "d:hi:v")) != -1) {
 		switch (n) {
 			case 'd':
-				delaySeconds=atoi(optarg);
-				fprintf(stdout,"# %d second delay between sending CAN commands\n",delaySeconds);
+				delayMilliseconds=atoi(optarg);
+				fprintf(stdout,"# %d millisecond delay between sending CAN commands\n",delayMilliseconds);
 				break;
 			case 'h':
-				fprintf(stdout,"# -d seconds\tdelay between CAN commands\n");
+				fprintf(stdout,"# -d milliseconds\tdelay between CAN commands\n");
 				fprintf(stdout,"# -v\tOutput verbose / debugging to stderr\n");
 				fprintf(stdout,"#\n");
 				fprintf(stdout,"# -h\tThis help message then exit\n");
@@ -130,41 +139,63 @@ int main(int argc, char **argv) {
 	}
 	if ( outputDebug) fprintf(stderr,"done\n");
 
-	for ( n=0 ; ; n++ ) {
-		struct can_frame frame;
+	/* build CAN frame to send */
+	memset(&frame, 0, sizeof(struct can_frame));
+	frame.can_id = 0x18FF1610 | CAN_EFF_FLAG;
+	frame.can_dlc= 8; /* message length */
+	/* initialize data bytes to 0xff */
+	memset(&frame.data, 0xff, 8);
 
-		printf("## sleeping 10 seconds\n");
-		sleep(10);
+	resetTimeout=1;
+	for ( n=0 ; ; n++ ) {
+		if ( resetTimeout ) {
+				/* delayMilliseconds * 100 millisecond delay */
+				t.tv_sec = 0;
+				t.tv_usec = delayMilliseconds * 1000;
+		}
+
+		
+		/* delay. If interrupted, then delay in next loop */
+		if ( -1 == select(0, NULL, NULL, NULL, &t) ) {
+			if ( EINTR == errno ) {
+				/* interrupted, so sleep not complete */
+				printf("select sleep interferred with...\n");
+				/* t structure now has time remaining, leave it and get back into select */
+				resetTimeout=0;
+				continue;
+			} else {
+				/* some other error. Reset */
+				resetTimeout=1;
+			}
+		} else {
+			/* reset timeout just to be sure */
+			resetTimeout=1;
+		}
+
+
+ 
+		/* set the first byte of the launch control message to our desired generator state */
+ 		printf("# Sending (n=%d) ",n);
 
 		if (  SIGNAL_GENERATOR_RUN_OPEN_CONTACTOR == generatorRequestedState ) {
-			printf("# sending GENERATOR_RUN_OPEN_CONTACTOR CAN message\n");
+			printf("GENERATOR_RUN_OPEN_CONTACTOR CAN message\n");
+			frame.data[0]=0x65;
 		} else if (  SIGNAL_GENERATOR_RUN_CLOSED_CONTACTOR == generatorRequestedState ) {
-			printf("# sending GENERATOR_RUN_CLOSED_CONTACTOR CAN message\n");
+			printf("GENERATOR_RUN_CLOSED_CONTACTOR CAN message\n");
+			frame.data[0]=0xA5;
 		} else {
-			printf("# sending GENERATOR_STOP CAN message\n");
+			printf("GENERATOR_STOP CAN message\n");
+			frame.data[0]=0x55;
 		}
 
-#if 0
-			/* Read a message back from the CAN bus */
-			memset(&frame, 0, sizeof(struct can_frame));
-			if ( outputDebug) fprintf(stderr,"# Reading (n=%d) from CAN bus ... ",n);
-			bytes_read = read( skt, &frame, sizeof(frame) );
-			if ( outputDebug) fprintf(stderr," done (%d bytes read)\n",bytes_read);
-
-			if ( outputDebug ) {
-				/* strip extended off */
-				fprintf(stdout,"# frame.can_id =0x%08x\n",frame.can_id ^ CAN_EFF_FLAG);
-				fprintf(stdout,"# frame.can_dlc=%d\n",frame.can_dlc);
-
-				for ( i=0 ; i<frame.can_dlc ; i++ ) {
-					fprintf(stdout,"# frame.data[%d]=0x%02x\n",i,frame.data[i]);
-				}
-
-				fprintf(stdout,"\n\n");
-				fflush(stdout);
-			}
-#endif
+		/* send launch control message */
+		int bytes_sent = write( skt, &frame, sizeof(frame) );
+		if ( bytes_sent <= 0 ) {
+			printf("# error writing to CAN socket. Aborting.\n");
+			exit(4);
 		}
 
-		return 0;
 	}
+
+	return 0;
+}
