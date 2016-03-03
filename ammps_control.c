@@ -89,17 +89,13 @@ int override_switch(char *swAfilename, char *swBfilename) {
 	fclose(fr);
 
 	if ( '0' == a && '1' == b ) {
-		printf("--> OVERRIDE_MODE_OFF\n");
 		return OVERRIDE_MODE_OFF;
 	} else if ( '1' == a && '0' == b ) {
-		printf("--> OVERRIDE_MODE_ON\n");
 		return OVERRIDE_MODE_ON;
 	} else if ( '1' == a && '1' == b ) {
-		printf("--> OVERRIDE_MODE_AUTO\n");
 		return OVERRIDE_MODE_AUTO;
 	} else {
 		/* shouldn't get here. Switch doesn't allow both contacts to be closed */
-		printf("--> OVERRIDE_MODE_UNKNOWN\n");
 		return OVERRIDE_MODE_UNKNOWN;
 	}
 }
@@ -238,7 +234,7 @@ int main(int argc, char **argv) {
 		}
 
 		/* override switch status */
-		override_switch(swAfilename,swBfilename);
+		int override = override_switch(swAfilename,swBfilename);
  
 		/* set the first byte of the launch control message to our desired generator state */
  		printf("# Sending (n=%d) ",n);
@@ -252,6 +248,14 @@ int main(int argc, char **argv) {
 		} else {
 			printf("GENERATOR_STOP CAN message\n");
 			frame.data[0]=0x55;
+		}
+
+		if ( OVERRIDE_MODE_OFF == override ) {
+			printf("OVERRIDE OFF BY SWITCH\n");
+			frame.data[0]=0x55;
+		} else if ( OVERRIDE_MODE_ON == override ) {
+			printf("OVERRIDE ON (CLOSED CONTACTOR) BY SWITCH\n");
+			frame.data[0]=0xA5;
 		}
 
 		/* send launch control message */
