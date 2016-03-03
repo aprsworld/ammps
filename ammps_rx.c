@@ -90,7 +90,7 @@ int main(int argc, char **argv) {
 	signal(SIGALRM, sighandler);
 	signal(SIGPIPE, sighandler);
 
-	while ((n = getopt (argc, argv, "a:hi:vt:p:")) != -1) {
+	while ((n = getopt (argc, argv, "a:hi:p:s:t:v")) != -1) {
 		switch (n) {
 			case 'a':
 				alarmSeconds=atoi(optarg);
@@ -100,6 +100,19 @@ int main(int argc, char **argv) {
 				tcpPort=atoi(optarg);
 				fprintf(stdout,"# TCP server port = %d\n",tcpPort);
 				break;
+			case 's':
+				n=atoi(optarg);
+				fprintf(stdout,"# Delaying startup for %d seconds ",n);
+				fflush(stdout);
+				for ( i=0 ; i<n ; i++ ) {
+					sleep(1);
+					fputc('.',stdout);
+					fflush(stdout);
+				}
+				fprintf(stdout," done\n");
+				fflush(stdout);
+				break;
+
 			case 't':
 				strncpy(tcpHost,optarg,sizeof(tcpHost));
 				tcpHost[sizeof(tcpHost)-1]='\0';
@@ -107,6 +120,7 @@ int main(int argc, char **argv) {
 				break;
 			case 'h':
 				fprintf(stdout,"# -a seconds\tTerminate after seconds without data\n");
+				fprintf(stdout,"# -s seconds\tstartup delay\n");
 				fprintf(stdout,"# -t tcpHost\tTCP server hostname\n");
 				fprintf(stdout,"# -p tcpPort\tTCP server port number\n");
 				fprintf(stdout,"# -v\tOutput verbose / debugging to stderr\n");
@@ -176,7 +190,7 @@ int main(int argc, char **argv) {
 
 	/* Establish connection */
 	if ( connect(sockfd, (struct sockaddr *) &serveraddr, sizeof(serveraddr)) < 0) {
-		fprintf(stderr,"\n#Error connecting to TCP server %s:%d. Bye.\n",tcpHost,tcpPort);
+		fprintf(stderr,"\n# Error connecting to TCP server %s:%d. Bye.\n",tcpHost,tcpPort);
 		return 3;
 	}
 

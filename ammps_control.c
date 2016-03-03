@@ -153,7 +153,7 @@ int main(int argc, char **argv) {
 				fprintf(stdout,"# -d milliseconds\tdelay between CAN commands\n");
 				fprintf(stdout,"# -h\tThis help message then exit\n");
 				fprintf(stdout,"# -i\tCAN interface to use (eg can0, can1, etc)\n");
-				fprintf(stdout,"# -s secords\tstartup delay\n");
+				fprintf(stdout,"# -s seconds\tstartup delay\n");
 				fprintf(stdout,"# -v\tOutput verbose / debugging to stderr\n");
 				return 0;
 			case 'i':
