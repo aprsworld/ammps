@@ -5,16 +5,16 @@
 #include <sys/socket.h>
 #include <sys/ioctl.h>
 #include <net/if.h>
-
 #include <linux/can.h>
 #include <linux/can/raw.h>
 #include <string.h>
 #include <unistd.h>
 #include <signal.h>
 #include <getopt.h>
-
 #include <sys/select.h>
 #include <errno.h>
+#include <netinet/in.h>
+#include <netdb.h>
 
 
 extern char *optarg;
@@ -73,12 +73,12 @@ int override_switch(char *swAfilename, char *swBfilename) {
 	}
 
 	/*
-	A B VALUE
-	0 0 INVALID / NOT POSSIBLE
-	0 1 OFF  OVERRIDE
-	1 0 ON   OVERRIDE
-	1 1 AUTO MODE
-	*/
+		A B VALUE
+		0 0 INVALID / NOT POSSIBLE
+		0 1 OFF  OVERRIDE
+		1 0 ON   OVERRIDE
+		1 1 AUTO MODE
+		*/
 
 	fr=fopen(swAfilename,"r");
 	a=fgetc(fr);
@@ -100,6 +100,25 @@ int override_switch(char *swAfilename, char *swBfilename) {
 	}
 }
 
+
+/* CRC calculator for WorldData packet */
+unsigned int crc_chk(unsigned char* data, unsigned char length) {
+	int j;
+	unsigned int reg_crc=0xFFFF;
+
+	while ( length-- ) {
+		reg_crc ^= *data++;
+		for ( j=0 ; j<8 ; j++ ) {
+			if( reg_crc & 0x01 ) { /* LSB(b0)=1 */
+				reg_crc=(reg_crc>>1) ^ 0xA001;
+			} else {
+				reg_crc=reg_crc >>1;
+			}
+		}
+	}
+	return reg_crc;
+}
+
 int main(int argc, char **argv) {
 	struct timeval t;
 	int bytes_read, bytes_sent;
@@ -110,8 +129,15 @@ int main(int argc, char **argv) {
 	int outputDebug=0;
 
 	char canInterface[128];
-
 	struct can_frame frame;
+
+	int sockfd;
+	char tcpHost[256];
+	int tcpPort;
+
+	struct sockaddr_in serveraddr;
+	struct hostent *server;
+	char world[20];
 
 	char *swAfilename;
 	char *swBfilename;
@@ -122,6 +148,8 @@ int main(int argc, char **argv) {
 	delayMilliseconds=500;
 	swAfilename=NULL;
 	swBfilename=NULL;
+	strcpy(tcpHost,"localhost");
+	tcpPort=4010;
 
 
 	/* write gives a SIGPIPE */
@@ -133,7 +161,7 @@ int main(int argc, char **argv) {
 	signal(SIGNAL_GENERATOR_RUN_CLOSED_CONTACTOR, sighandler);
 	signal(SIGNAL_GENERATOR_STOP,                 sighandler);
 
-	while ((n = getopt (argc, argv, "a:b:d:hi:s:v")) != -1) {
+	while ((n = getopt (argc, argv, "a:b:d:hi:p:s:t:v")) != -1) {
 		switch (n) {
 			case 'a':
 				swAfilename=optarg;
@@ -153,13 +181,19 @@ int main(int argc, char **argv) {
 				fprintf(stdout,"# -d milliseconds\tdelay between CAN commands\n");
 				fprintf(stdout,"# -h\tThis help message then exit\n");
 				fprintf(stdout,"# -i\tCAN interface to use (eg can0, can1, etc)\n");
+				fprintf(stdout,"# -p tcpPort\tTCP server port number\n");
 				fprintf(stdout,"# -s seconds\tstartup delay\n");
+            fprintf(stdout,"# -t tcpHost\tTCP server hostname\n");
 				fprintf(stdout,"# -v\tOutput verbose / debugging to stderr\n");
 				return 0;
 			case 'i':
 				strncpy(canInterface,optarg,sizeof(canInterface));
 				canInterface[sizeof(canInterface)-1]='\0';
 				fprintf(stderr,"# CAN interface = %s\n",canInterface);
+				break;
+			case 'p':
+				tcpPort=atoi(optarg);
+				fprintf(stdout,"# TCP server port = %d\n",tcpPort);
 				break;
 			case 's':
 				n=atoi(optarg);
@@ -173,6 +207,12 @@ int main(int argc, char **argv) {
 				fprintf(stdout," done\n");
 				fflush(stdout);
 				break;
+			case 't':
+				strncpy(tcpHost,optarg,sizeof(tcpHost));
+				tcpHost[sizeof(tcpHost)-1]='\0';
+				fprintf(stderr,"# TCP server hostname = %s\n",tcpHost);
+				break;
+
 			case 'v':
 				outputDebug=1;
 				fprintf(stderr,"# verbose (debugging) output to stderr enabled\n");
@@ -217,15 +257,42 @@ int main(int argc, char **argv) {
 	/* initialize data bytes to 0xff */
 	memset(&frame.data, 0xff, 8);
 
+
+	/* setup TCP connection */
+	sockfd = socket(AF_INET, SOCK_STREAM, 0);
+	if (sockfd < 0) {
+		fprintf(stderr,"\n# Error opening TCP socket. Bye.\n");
+		return 1;
+	}
+
+	/* gethostbyname: get the server's DNS entry */
+	server = gethostbyname(tcpHost);
+	if ( NULL == server ) {
+		fprintf(stderr,"\n# No such hostname %s.\n",tcpHost);
+		return 2;
+	}
+
+	/* Construct the server sockaddr_in structure */
+	memset(&serveraddr, 0, sizeof(serveraddr));			/* Clear struct */
+	serveraddr.sin_family = AF_INET;							/* Internet/IP */
+	serveraddr.sin_addr = *(struct in_addr *) server->h_addr;
+	serveraddr.sin_port = htons(tcpPort);					/* server port */
+
+	/* Establish connection */
+	if ( connect(sockfd, (struct sockaddr *) &serveraddr, sizeof(serveraddr)) < 0) {
+		fprintf(stderr,"\n# Error connecting to TCP server %s:%d. Bye.\n",tcpHost,tcpPort);
+		return 3;
+	}
+
 	resetTimeout=1;
 	for ( n=0 ; ; n++ ) {
 		if ( resetTimeout ) {
-				/* delayMilliseconds * 100 millisecond delay */
-				t.tv_sec = 0;
-				t.tv_usec = delayMilliseconds * 1000;
+			/* delayMilliseconds * 100 millisecond delay */
+			t.tv_sec = 0;
+			t.tv_usec = delayMilliseconds * 1000;
 		}
 
-		
+
 		/* delay. If interrupted, then delay in next loop */
 		if ( -1 == select(0, NULL, NULL, NULL, &t) ) {
 			if ( EINTR == errno ) {
@@ -245,9 +312,9 @@ int main(int argc, char **argv) {
 
 		/* override switch status */
 		int override = override_switch(swAfilename,swBfilename);
- 
+
 		/* set the first byte of the launch control message to our desired generator state */
- 		printf("# Sending (n=%d) ",n);
+		printf("# Sending (n=%d) ",n);
 
 		if (  SIGNAL_GENERATOR_RUN_OPEN_CONTACTOR == generatorRequestedState ) {
 			printf("GENERATOR_RUN_OPEN_CONTACTOR CAN message\n");
@@ -275,6 +342,34 @@ int main(int argc, char **argv) {
 			exit(4);
 		}
 
+		/* send message to TCP */
+		/* build world data packet */
+		world[0]='#'; /* STX */
+		world[1]='A'; /* SERIAL PREFIX */
+		world[2]='M'; /* SERIAL NUMBER MSB */
+		world[3]='M'; /* SERIAL NUMBER LSB */
+		world[4]=20;  /* PACKET LENGTH, COMPLETE */
+		world[5]=34;  /* PACKET TYPE */
+		/* CAN ID (4 bytes). Send 0xFF FF FF FF to indicate special packet from control program  */
+		world[6]=0xff;
+		world[7]=0xff;
+		world[8]=0xff;
+		world[9]=0xff;
+		/* CAN DATA (8 bytes) */
+		for ( i=0 ; i<8 ; i++ ) {
+			world[10+i]=frame.data[i] & 0xff;
+		}
+		/* calculate CRC */
+		short lCRC=crc_chk(world+1,17);
+		world[18]=(lCRC>>8) & 0xff;
+		world[19]= lCRC     & 0xff;
+
+		/* send the message line to the server */
+		int nb = write(sockfd, world, sizeof(world));
+		if ( nb < 0 ) {
+			fprintf(stderr,"\n# Write returned %d.\n",nb);
+			return 4;
+		}
 	}
 
 	return 0;
