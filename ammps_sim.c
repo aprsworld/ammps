@@ -34,31 +34,52 @@ struct can_frame frame_operating_hours_fuel_level;
 #define AF_CAN PF_CAN
 #endif
 
-typedef union u_float {
-	float f;
-	uint8_t b[sizeof(float)];
-} u_float;
+void update_frame_operating_hours_fuel_level(char ch) {
+	static int fuel_level=500;
+	static int maintenance_countdown=250;
+	static int running_time=0;
 
-typedef union u_uint32 {
-	uint32_t i;
-	uint8_t b[sizeof(uint32_t)];
-} u_uint32;
+	if ( 'g' == ch ) {
+		printw("# fuel level was: %d\n",fuel_level);
+		fuel_level++;
+		printw("# fuel level now: %d\n",fuel_level);
+	}
 
-float vcsBytesToFloat(uint8_t *b) {
-	u_float u;
-	
-	/* little endian ~9.55 */
-	//u.b[0]=0x30;
-	//u.b[1]=0xd0;
-	//u.b[2]=0x18;
-	//u.b[3]=0x41;
+	if ( 'h' == ch ) {
+		printw("# fuel level was: %d\n",fuel_level);
+		fuel_level--;
+		printw("# fuel level now: %d\n",fuel_level);
+	}
 
-	u.b[0]=b[0];
-	u.b[1]=b[1];
-	u.b[2]=b[2];
-	u.b[3]=b[3];
+	if ( 'i' == ch ) {
+		printw("# maintenance countdown was: %d\n",maintenance_countdown);
+		maintenance_countdown++;
+		printw("# maintenance countdown now: %d\n",maintenance_countdown);
+	}
 
-	return u.f;
+	if ( 'j' == ch ) {
+		printw("# maintenance countdown was: %d\n",maintenance_countdown);
+		maintenance_countdown--;
+		printw("# maintenance countdown now: %d\n",maintenance_countdown);
+	}
+
+	running_time++;
+
+	memset(&frame_event_update, 0, sizeof(struct can_frame));
+
+//	frame.can_id = 0x003;
+	frame_event_update.can_id = 0x18FF2320 | CAN_EFF_FLAG;
+	frame_event_update.can_dlc= 8; /* message length */
+
+	frame_event_update.data[0]=(fuel_level&0xff);
+	frame_event_update.data[1]=(fuel_level>>8)&0xff;
+
+	frame_event_update.data[2]=(maintenance_countdown&0xff);
+	frame_event_update.data[3]=(maintenance_countdown>>8)&0xff;
+
+	frame_event_update.data[4]=(running_time&0xff);
+	frame_event_update.data[5]=(running_time>>8)&0xff;
+	frame_event_update.data[6]=(running_time>>16)&0xff;
 }
 
 void update_frame_event_update(char ch) {
@@ -119,8 +140,6 @@ void update_frame_event_update(char ch) {
 	frame_event_update.data[4]|=(battleshort<<6);
 	frame_event_update.data[4]|=(deadbus<<5);
 	frame_event_update.data[4]|=(genset_cb_position<<4);
-
-
 }
 
 void periodic_100ms(void) {
@@ -134,16 +153,23 @@ void periodic_100ms(void) {
 		seconds++;
 
 		/* Send a message to the CAN bus */
-		if ( outputDebug) printw("# Sending message to CAN bus ... ");
+		if ( outputDebug) printw("# Sending messages to CAN bus ... ");
 
-		int bytes_sent = write( skt, &frame_event_update, sizeof(frame_event_update) );
+		int bytes_sent;
+		bytes_sent = write( skt, &frame_event_update, sizeof(frame_event_update) );
+		if ( bytes_sent <= 0 ) {
+			printw("\n# Error writing. Bye.\n");
+			return;
+		}
+
+		bytes_sent = write( skt, &frame_operating_hours_fuel_level, sizeof(frame_operating_hours_fuel_level) );
 		if ( bytes_sent <= 0 ) {
 			printw("\n# Error writing. Bye.\n");
 			return;
 		}
 
 
-		if ( outputDebug) printw(" done (%d bytes sent)\n",bytes_sent);
+		if ( outputDebug) printw(" done\n");
 
 
 		/* send packet at one second interval */
@@ -199,6 +225,7 @@ int main(int argc, char **argv) {
 	
 	/* initialize CAN frames */
 	update_frame_event_update('\0');
+	update_frame_operating_hours_fuel_level('\0');
 
 
 	/* Create the socket */
@@ -237,26 +264,11 @@ int main(int argc, char **argv) {
 			break;
 		} else if ( ch >= 'a' && ch <= 'f' ) {
 			update_frame_event_update(ch);
+		} else if ( ch >= 'g' && ch <= 'j' ) {
+			update_frame_operating_hours_fuel_level(ch);
 		}
 
 	}
- 
- #if 0
-		/* Read a message back from the CAN bus */
-		if ( outputDebug) fprintf("# Reading response from CAN bus ... ");
-		bytes_read = read( skt, &frame, sizeof(frame) );
-		if ( outputDebug) fprintf(" done (%d bytes read)\n",bytes_read);
-
-		if ( outputDebug ) {
-			fprintf(stdout,"# frame.can_id = 0x%03x\n",frame.can_id);
-			fprintf(stdout,"# frame.can_dlc=%d\n",frame.can_dlc);
-
-			for ( i=0 ; i<bytes_read ; i++ ) {
-				fprintf(stdout,"# frame.data[%d]=0x%02x\n",i,frame.data[i]);
-			}
-		}
-#endif
-
 	
 	/* tear down ncurses window */
 	endwin();
