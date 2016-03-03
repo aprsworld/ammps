@@ -59,6 +59,51 @@ void sighandler(int signum) {
 
 }
 
+#define OVERRIDE_MODE_OFF     0
+#define OVERRIDE_MODE_ON      1
+#define OVERRIDE_MODE_AUTO    2
+#define OVERRIDE_MODE_UNKNOWN 65535
+
+int override_switch(char *swAfilename, char *swBfilename) {
+	char a, b;
+	FILE *fr;
+
+	if ( NULL==swAfilename || NULL==swBfilename ) {
+		return OVERRIDE_MODE_UNKNOWN;
+	}
+
+	/*
+	A B VALUE
+	0 0 INVALID / NOT POSSIBLE
+	0 1 ON   OVERRIDE
+	1 0 OFF  OVERRIDE
+	1 1 AUTO MODE
+	*/
+
+	fr=fopen(swAfilename,"r");
+	a=fgetc(fr);
+	fclose(fr);
+
+	fr=fopen(swBfilename,"r");
+	b=fgetc(fr);
+	fclose(fr);
+
+	if ( '0' == a && '1' == b ) {
+		printf("--> OVERRIDE_MODE_ON\n");
+		return OVERRIDE_MODE_ON;
+	} else if ( '1' == a && '0' == b ) {
+		printf("--> OVERRIDE_MODE_OFF\n");
+		return OVERRIDE_MODE_OFF;
+	} else if ( '1' == a && '1' == b ) {
+		printf("--> OVERRIDE_MODE_AUTO\n");
+		return OVERRIDE_MODE_AUTO;
+	} else {
+		/* shouldn't get here. Switch doesn't allow both contacts to be closed */
+		printf("--> OVERRIDE_MODE_UNKNOWN\n");
+		return OVERRIDE_MODE_UNKNOWN;
+	}
+}
+
 int main(int argc, char **argv) {
 	struct timeval t;
 	int bytes_read, bytes_sent;
@@ -72,10 +117,15 @@ int main(int argc, char **argv) {
 
 	struct can_frame frame;
 
+	char *swAfilename;
+	char *swBfilename;
+
 	/* set initial values */
 	strcpy(canInterface,"can0");
 	generatorRequestedState=SIGNAL_GENERATOR_STOP;
 	delayMilliseconds=500;
+	swAfilename=NULL;
+	swBfilename=NULL;
 
 
 	/* write gives a SIGPIPE */
@@ -87,13 +137,24 @@ int main(int argc, char **argv) {
 	signal(SIGNAL_GENERATOR_RUN_CLOSED_CONTACTOR, sighandler);
 	signal(SIGNAL_GENERATOR_STOP,                 sighandler);
 
-	while ((n = getopt (argc, argv, "d:hi:v")) != -1) {
+	while ((n = getopt (argc, argv, "a:b:d:hi:v")) != -1) {
 		switch (n) {
+			case 'a':
+				swAfilename=optarg;
+				fprintf(stdout,"# Switch A filename: %s\n",swAfilename);
+				break;
+			case 'b':
+				swBfilename=optarg;
+				fprintf(stdout,"# Switch B filename: %s\n",swBfilename);
+				break;
 			case 'd':
 				delayMilliseconds=atoi(optarg);
 				fprintf(stdout,"# %d millisecond delay between sending CAN commands\n",delayMilliseconds);
 				break;
 			case 'h':
+				fprintf(stdout,"# -a switch A state file\t0 or 1\n");
+				fprintf(stdout,"# -b switch B state file\t0 or 1\n");
+				fprintf(stdout,"# -d milliseconds\tdelay between CAN commands\n");
 				fprintf(stdout,"# -d milliseconds\tdelay between CAN commands\n");
 				fprintf(stdout,"# -v\tOutput verbose / debugging to stderr\n");
 				fprintf(stdout,"#\n");
@@ -115,6 +176,10 @@ int main(int argc, char **argv) {
 
 	if ( !outputDebug  ) {
 		fprintf(stderr,"# warning: no output format is selected. Nothing will show.\n");
+	}
+
+	if ( NULL==swAfilename || NULL==swBfilename ) {
+		fprintf(stderr,"# swA and/or swB file not specified, override switch disabled\n");
 	}
 
 
@@ -172,7 +237,8 @@ int main(int argc, char **argv) {
 			resetTimeout=1;
 		}
 
-
+		/* override switch status */
+		override_switch(swAfilename,swBfilename);
  
 		/* set the first byte of the launch control message to our desired generator state */
  		printf("# Sending (n=%d) ",n);
