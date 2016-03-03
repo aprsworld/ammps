@@ -66,7 +66,7 @@ void sighandler(int signum) {
 #define OVERRIDE_MODE_OFF     0
 #define OVERRIDE_MODE_ON      1
 #define OVERRIDE_MODE_AUTO    2
-#define OVERRIDE_MODE_UNKNOWN 65535
+#define OVERRIDE_MODE_UNKNOWN 255
 
 int override_switch(char *swAfilename, char *swBfilename) {
 	char a, b;
@@ -361,10 +361,15 @@ int main(int argc, char **argv) {
 		world[7]=0xff;
 		world[8]=0xff;
 		world[9]=0xff;
-		/* CAN DATA (8 bytes) */
-		for ( i=0 ; i<8 ; i++ ) {
-			world[10+i]=frame.data[i] & 0xff;
-		}
+		world[10]=frame.data[0] & 0xff; /* command we are sending generator */
+		world[11]=override & 0xff;      /* our override switch state */
+		world[12]=0x00;
+		world[13]=0x00;
+		world[14]=0x00;
+		world[15]=0x00;
+		world[16]=0x00;
+		world[17]=0x00;
+
 		/* calculate CRC */
 		short lCRC=crc_chk(world+1,17);
 		world[18]=(lCRC>>8) & 0xff;
