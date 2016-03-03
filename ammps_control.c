@@ -240,12 +240,12 @@ int main(int argc, char **argv) {
 	if ( outputDebug) fprintf(stderr,"done\n");
 
 	/* Select that CAN interface, and bind the socket to it. */
-	if ( outputDebug) fprintf(stderr,"# Binding to interface ... ");
+	if ( outputDebug) fprintf(stderr,"# Binding to CAN interface ... ");
 	struct sockaddr_can addr;
 	addr.can_family = AF_CAN;
 	addr.can_ifindex = ifr.ifr_ifindex;
 	if ( 0 != bind( skt, (struct sockaddr*)&addr, sizeof(addr) ) ) {
-		fprintf(stderr,"\n# Error binding to interface. Bye.\n");
+		fprintf(stderr,"\n# Error binding to CAN interface. Bye.\n");
 		return 1;
 	}
 	if ( outputDebug) fprintf(stderr,"done\n");
@@ -279,10 +279,12 @@ int main(int argc, char **argv) {
 	serveraddr.sin_port = htons(tcpPort);					/* server port */
 
 	/* Establish connection */
+	if ( outputDebug) fprintf(stderr,"# Connecting to %s:%d ... ",tcpHost,tcpPort);
 	if ( connect(sockfd, (struct sockaddr *) &serveraddr, sizeof(serveraddr)) < 0) {
 		fprintf(stderr,"\n# Error connecting to TCP server %s:%d. Bye.\n",tcpHost,tcpPort);
 		return 3;
 	}
+	if ( outputDebug) fprintf(stderr,"done\n");
 
 	resetTimeout=1;
 	for ( n=0 ; ; n++ ) {
