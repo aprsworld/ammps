@@ -1,3 +1,4 @@
+/* compile with: gcc ammps_sim.c -o ammps_sim -lncurses */
 #include <stdio.h>
 #include <stdint.h>
 #include <sys/types.h>
@@ -24,6 +25,7 @@ int outputDebug=0;
 /* PGN's we send */
 struct can_frame frame_event_update;
 struct can_frame frame_operating_hours_fuel_level;
+struct can_frame frame_status;;
  
 /* At time of writing, these constants are not defined in the headers */
 #ifndef PF_CAN
@@ -33,6 +35,35 @@ struct can_frame frame_operating_hours_fuel_level;
 #ifndef AF_CAN
 #define AF_CAN PF_CAN
 #endif
+
+void update_frame_status(char ch) {
+	static int gen_status=0;
+	static int gen_status_switch_position=0;
+	static int running_time=0;
+
+	if ( 'k' == ch ) {
+		printw("# gen_status was: %d\n",gen_status);
+		gen_status++;
+		if ( 16 == gen_status )
+			gen_status=0;
+		printw("# gen_status now: %d\n",gen_status);
+	}
+
+	if ( 'l' == ch ) {
+		printw("# gen_status_switch_position was: %d\n",gen_status_switch_position);
+		gen_status_switch_position++;
+		if ( 4 == gen_status_switch_position )
+			gen_status_switch_position=0;
+		printw("# gen_status_switch_position now: %d\n",gen_status_switch_position);
+	}
+
+	memset(&frame_status, 0, sizeof(struct can_frame));
+
+	frame_status.can_id = 0x18FF1720 | CAN_EFF_FLAG;
+	frame_status.can_dlc= 8; /* message length */
+
+	frame_status.data[0]=(gen_status&0xf) + (gen_status_switch_position<<4);
+}
 
 void update_frame_operating_hours_fuel_level(char ch) {
 	static int fuel_level=500;
@@ -66,21 +97,21 @@ void update_frame_operating_hours_fuel_level(char ch) {
 	running_time++;
 //	printw("# running_time now: %d\n",running_time);
 
-	memset(&frame_event_update, 0, sizeof(struct can_frame));
+	memset(&frame_operating_hours_fuel_level, 0, sizeof(struct can_frame));
 
 //	frame.can_id = 0x003;
-	frame_event_update.can_id = 0x18FF2320 | CAN_EFF_FLAG;
-	frame_event_update.can_dlc= 8; /* message length */
+	frame_operating_hours_fuel_level.can_id = 0x18FF2320 | CAN_EFF_FLAG;
+	frame_operating_hours_fuel_level.can_dlc= 8; /* message length */
 
-	frame_event_update.data[0]=(fuel_level&0xff);
-	frame_event_update.data[1]=(fuel_level>>8)&0xff;
+	frame_operating_hours_fuel_level.data[0]=(fuel_level&0xff);
+	frame_operating_hours_fuel_level.data[1]=(fuel_level>>8)&0xff;
 
-	frame_event_update.data[2]=(maintenance_countdown&0xff);
-	frame_event_update.data[3]=(maintenance_countdown>>8)&0xff;
+	frame_operating_hours_fuel_level.data[2]=(maintenance_countdown&0xff);
+	frame_operating_hours_fuel_level.data[3]=(maintenance_countdown>>8)&0xff;
 
-	frame_event_update.data[4]=(running_time&0xff);
-	frame_event_update.data[5]=(running_time>>8)&0xff;
-	frame_event_update.data[6]=(running_time>>16)&0xff;
+	frame_operating_hours_fuel_level.data[4]=(running_time&0xff);
+	frame_operating_hours_fuel_level.data[5]=(running_time>>8)&0xff;
+	frame_operating_hours_fuel_level.data[6]=(running_time>>16)&0xff;
 }
 
 void update_frame_event_update(char ch) {
@@ -154,23 +185,32 @@ void periodic_100ms(void) {
 		seconds++;
 
 		/* Send a message to the CAN bus */
-		if ( outputDebug) printw("# Sending messages to CAN bus ... ");
+		if ( outputDebug) printw("# Sending to CAN { ");
 
 		int bytes_sent;
+		printw("(frame event update) ");
 		bytes_sent = write( skt, &frame_event_update, sizeof(frame_event_update) );
 		if ( bytes_sent <= 0 ) {
 			printw("\n# Error writing. Bye.\n");
 			return;
 		}
 
+		printw("(frame operating) ");
 		bytes_sent = write( skt, &frame_operating_hours_fuel_level, sizeof(frame_operating_hours_fuel_level) );
 		if ( bytes_sent <= 0 ) {
 			printw("\n# Error writing. Bye.\n");
 			return;
 		}
 
+		printw("(frame status) ");
+		bytes_sent = write( skt, &frame_status, sizeof(frame_status) );
+		if ( bytes_sent <= 0 ) {
+			printw("\n# Error writing. Bye.\n");
+			return;
+		}
 
-		if ( outputDebug) printw(" done\n");
+
+		if ( outputDebug) printw("} done\n");
 
 
 		/* send packet at one second interval */
@@ -227,6 +267,7 @@ int main(int argc, char **argv) {
 	/* initialize CAN frames */
 	update_frame_event_update('\0');
 	update_frame_operating_hours_fuel_level('\0');
+	update_frame_status('\0');
 
 
 	/* Create the socket */
@@ -269,6 +310,8 @@ int main(int argc, char **argv) {
 			update_frame_event_update(ch);
 		} else if ( ch >= 'g' && ch <= 'j' ) {
 			update_frame_operating_hours_fuel_level(ch);
+		} else if ( ch >= 'k' && ch <= 'l' ) {
+			update_frame_status(ch);
 		}
 
 	}
