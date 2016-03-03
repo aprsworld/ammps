@@ -133,7 +133,7 @@ int main(int argc, char **argv) {
 	signal(SIGNAL_GENERATOR_RUN_CLOSED_CONTACTOR, sighandler);
 	signal(SIGNAL_GENERATOR_STOP,                 sighandler);
 
-	while ((n = getopt (argc, argv, "a:b:d:hi:v")) != -1) {
+	while ((n = getopt (argc, argv, "a:b:d:hi:s:v")) != -1) {
 		switch (n) {
 			case 'a':
 				swAfilename=optarg;
@@ -151,17 +151,27 @@ int main(int argc, char **argv) {
 				fprintf(stdout,"# -a switch A state file\t0 or 1\n");
 				fprintf(stdout,"# -b switch B state file\t0 or 1\n");
 				fprintf(stdout,"# -d milliseconds\tdelay between CAN commands\n");
-				fprintf(stdout,"# -d milliseconds\tdelay between CAN commands\n");
-				fprintf(stdout,"# -v\tOutput verbose / debugging to stderr\n");
-				fprintf(stdout,"#\n");
 				fprintf(stdout,"# -h\tThis help message then exit\n");
-				fprintf(stdout,"#\n");
 				fprintf(stdout,"# -i\tCAN interface to use (eg can0, can1, etc)\n");
+				fprintf(stdout,"# -s secords\tstartup delay\n");
+				fprintf(stdout,"# -v\tOutput verbose / debugging to stderr\n");
 				return 0;
 			case 'i':
 				strncpy(canInterface,optarg,sizeof(canInterface));
 				canInterface[sizeof(canInterface)-1]='\0';
 				fprintf(stderr,"# CAN interface = %s\n",canInterface);
+				break;
+			case 's':
+				n=atoi(optarg);
+				fprintf(stdout,"# Delaying startup for %d seconds ",n);
+				fflush(stdout);
+				for ( i=0 ; i<n ; i++ ) {
+					sleep(1);
+					fputc('.',stdout);
+					fflush(stdout);
+				}
+				fprintf(stdout," done\n");
+				fflush(stdout);
 				break;
 			case 'v':
 				outputDebug=1;
