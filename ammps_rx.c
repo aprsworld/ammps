@@ -44,6 +44,25 @@ void sighandler(int signum) {
 	exit(1);
 }
 
+/* CRC calculator for WorldData packet */
+unsigned int crc_chk(unsigned char* data, unsigned char length) {
+	int j;
+	unsigned int reg_crc=0xFFFF;
+
+	while ( length-- ) {
+		reg_crc ^= *data++;
+		for ( j=0 ; j<8 ; j++ ) {
+			if( reg_crc & 0x01 ) { /* LSB(b0)=1 */
+				reg_crc=(reg_crc>>1) ^ 0xA001;
+			} else {
+				reg_crc=reg_crc >>1;
+			}
+		}
+	}
+	return reg_crc;
+}
+
+
 int main(int argc, char **argv) {
 	int bytes_read, bytes_sent;
 	int alarmSeconds=5;
@@ -59,7 +78,7 @@ int main(int argc, char **argv) {
 
 	struct sockaddr_in serveraddr;
 	struct hostent *server;
-	char buf[256];
+	char world[20];
 
 	/* set initail values */
 	strcpy(canInterface,"can0");
@@ -187,10 +206,31 @@ int main(int argc, char **argv) {
 			fprintf(stdout,"\n\n");
 			fflush(stdout);
 
-			sprintf(buf,"# n=%d\n",n);
+			sprintf(world,"# n=%d\n",n);
+
+			/* build world data packet */
+			world[0]='#'; /* STX */
+			world[1]='A'; /* SERIAL PREFIX */
+			world[2]='M'; /* SERIAL NUMBER MSB */
+			world[3]='M'; /* SERIAL NUMBER LSB */
+			world[4]=20;  /* PACKET LENGTH, COMPLETE */
+			world[5]=34;  /* PACKET TYPE */
+			world[6]=((frame.can_id ^ CAN_EFF_FLAG)>>24) & 0xff;
+			world[7]=((frame.can_id ^ CAN_EFF_FLAG)>>16) & 0xff;
+			world[8]=((frame.can_id ^ CAN_EFF_FLAG)>>8)  & 0xff;
+			world[9]= (frame.can_id ^ CAN_EFF_FLAG)      & 0xff;
+			for ( i=0 ; i<8 ; i++ ) {
+				world[10+i]=frame.data[i] & 0xff;
+			}
+			/* calculate CRC */
+			short lCRC=crc_chk(world+1,17);
+			world[18]=(lCRC>>8) & 0xff;
+			world[19]= lCRC     & 0xff;
+
+			printf("local CRC = 0x%02X %02x\n",world[18],world[19]);
 
 			/* send the message line to the server */
-			int nb = write(sockfd, buf, strlen(buf));
+			int nb = write(sockfd, world, sizeof(world));
 			if ( nb < 0 ) {
 				fprintf(stderr,"\n# Write returned %d.\n",nb);
 				return 4;
