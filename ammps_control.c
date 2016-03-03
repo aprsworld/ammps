@@ -75,8 +75,8 @@ int override_switch(char *swAfilename, char *swBfilename) {
 	/*
 	A B VALUE
 	0 0 INVALID / NOT POSSIBLE
-	0 1 ON   OVERRIDE
-	1 0 OFF  OVERRIDE
+	0 1 OFF  OVERRIDE
+	1 0 ON   OVERRIDE
 	1 1 AUTO MODE
 	*/
 
@@ -89,8 +89,8 @@ int override_switch(char *swAfilename, char *swBfilename) {
 	fclose(fr);
 
 	if ( '0' == a && '1' == b ) {
-		printf("--> OVERRIDE_MODE_ON\n");
-		return OVERRIDE_MODE_ON;
+		printf("--> OVERRIDE_MODE_OFF\n");
+		return OVERRIDE_MODE_OFF;
 	} else if ( '1' == a && '0' == b ) {
 		printf("--> OVERRIDE_MODE_OFF\n");
 		return OVERRIDE_MODE_OFF;
