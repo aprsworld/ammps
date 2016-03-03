@@ -150,14 +150,14 @@ int main(int argc, char **argv) {
 	int skt = socket( PF_CAN, SOCK_RAW, CAN_RAW );
 
 	/* Locate the interface you wish to use */
-	if ( outputDebug) fprintf(stderr,"# Locating interface %s ... ",canInterface);
+	if ( outputDebug) fprintf(stderr,"# Locating CAN interface %s ... ",canInterface);
 	struct ifreq ifr;
 	strcpy(ifr.ifr_name, canInterface);
 	ioctl(skt, SIOCGIFINDEX, &ifr); /* ifr.ifr_ifindex gets filled  with that device's index */
 	if ( outputDebug) fprintf(stderr,"done\n");
 
 	/* Select that CAN interface, and bind the socket to it. */
-	if ( outputDebug) fprintf(stderr,"# Binding to interface ... ");
+	if ( outputDebug) fprintf(stderr,"# Binding to CAN interface ... ");
 	struct sockaddr_can addr;
 	addr.can_family = AF_CAN;
 	addr.can_ifindex = ifr.ifr_ifindex;
@@ -189,10 +189,13 @@ int main(int argc, char **argv) {
 	serveraddr.sin_port = htons(tcpPort);					/* server port */
 
 	/* Establish connection */
+	if ( outputDebug) fprintf(stderr,"# Connecting to %s:%d ... ",tcpHost,tcpPort);
 	if ( connect(sockfd, (struct sockaddr *) &serveraddr, sizeof(serveraddr)) < 0) {
 		fprintf(stderr,"\n# Error connecting to TCP server %s:%d. Bye.\n",tcpHost,tcpPort);
 		return 3;
 	}
+	if ( outputDebug) fprintf(stderr,"done\n");
+
 
 	for ( n=0 ; ; n++ ) {
 		struct can_frame frame;

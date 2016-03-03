@@ -36,6 +36,10 @@ extern int optind, opterr, optopt;
 int generatorRequestedState;
 
 
+#define CAN_DATA0_GENERATOR_RUN_OPEN_CONTACTOR   0x65
+#define CAN_DATA0_GENERATOR_RUN_CLOSED_CONTACTOR 0xA5
+#define CAN_DATA0_GENERATOR_STOP                 0x55
+
 /* signal handler installed in main */
 void sighandler(int signum) {
 	if ( SIGPIPE == signum ) {
@@ -233,7 +237,7 @@ int main(int argc, char **argv) {
 	int skt = socket( PF_CAN, SOCK_RAW, CAN_RAW );
 
 	/* Locate the interface you wish to use */
-	if ( outputDebug) fprintf(stderr,"# Locating interface %s ... ",canInterface);
+	if ( outputDebug) fprintf(stderr,"# Locating CAN interface %s ... ",canInterface);
 	struct ifreq ifr;
 	strcpy(ifr.ifr_name, canInterface);
 	ioctl(skt, SIOCGIFINDEX, &ifr); /* ifr.ifr_ifindex gets filled  with that device's index */
@@ -320,21 +324,21 @@ int main(int argc, char **argv) {
 
 		if (  SIGNAL_GENERATOR_RUN_OPEN_CONTACTOR == generatorRequestedState ) {
 			printf("GENERATOR_RUN_OPEN_CONTACTOR CAN message\n");
-			frame.data[0]=0x65;
+			frame.data[0]=CAN_DATA0_GENERATOR_RUN_OPEN_CONTACTOR;
 		} else if (  SIGNAL_GENERATOR_RUN_CLOSED_CONTACTOR == generatorRequestedState ) {
 			printf("GENERATOR_RUN_CLOSED_CONTACTOR CAN message\n");
-			frame.data[0]=0xA5;
+			frame.data[0]=CAN_DATA0_GENERATOR_RUN_CLOSED_CONTACTOR;
 		} else {
 			printf("GENERATOR_STOP CAN message\n");
-			frame.data[0]=0x55;
+			frame.data[0]=CAN_DATA0_GENERATOR_STOP;
 		}
 
 		if ( OVERRIDE_MODE_OFF == override ) {
 			printf("OVERRIDE OFF BY SWITCH\n");
-			frame.data[0]=0x55;
+			frame.data[0]=CAN_DATA0_GENERATOR_STOP;
 		} else if ( OVERRIDE_MODE_ON == override ) {
 			printf("OVERRIDE ON (CLOSED CONTACTOR) BY SWITCH\n");
-			frame.data[0]=0xA5;
+			frame.data[0]=CAN_DATA0_GENERATOR_RUN_CLOSED_CONTACTOR;
 		}
 
 		/* send launch control message */
