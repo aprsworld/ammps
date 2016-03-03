@@ -9,6 +9,7 @@
 #include <linux/can.h>
 #include <linux/can/raw.h>
 #include <string.h>
+
 #include <unistd.h>
 #include <signal.h>
 #include <getopt.h>
@@ -215,10 +216,12 @@ int main(int argc, char **argv) {
 			world[3]='M'; /* SERIAL NUMBER LSB */
 			world[4]=20;  /* PACKET LENGTH, COMPLETE */
 			world[5]=34;  /* PACKET TYPE */
+			/* CAN ID (4 bytes) */
 			world[6]=((frame.can_id ^ CAN_EFF_FLAG)>>24) & 0xff;
 			world[7]=((frame.can_id ^ CAN_EFF_FLAG)>>16) & 0xff;
 			world[8]=((frame.can_id ^ CAN_EFF_FLAG)>>8)  & 0xff;
 			world[9]= (frame.can_id ^ CAN_EFF_FLAG)      & 0xff;
+			/* CAN DATA (8 bytes) */
 			for ( i=0 ; i<8 ; i++ ) {
 				world[10+i]=frame.data[i] & 0xff;
 			}
@@ -226,8 +229,6 @@ int main(int argc, char **argv) {
 			short lCRC=crc_chk(world+1,17);
 			world[18]=(lCRC>>8) & 0xff;
 			world[19]= lCRC     & 0xff;
-
-			printf("local CRC = 0x%02X %02x\n",world[18],world[19]);
 
 			/* send the message line to the server */
 			int nb = write(sockfd, world, sizeof(world));
