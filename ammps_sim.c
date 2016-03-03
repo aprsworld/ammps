@@ -64,6 +64,7 @@ void update_frame_operating_hours_fuel_level(char ch) {
 	}
 
 	running_time++;
+//	printw("# running_time now: %d\n",running_time);
 
 	memset(&frame_event_update, 0, sizeof(struct can_frame));
 
@@ -256,6 +257,8 @@ int main(int argc, char **argv) {
 		t.tv_sec = 0;
 		t.tv_usec = 100000; 
 		select(0, NULL, NULL, NULL, &t); 
+
+		update_frame_operating_hours_fuel_level('\0'); /* running time gets incremented everytime through */
 		periodic_100ms();
 
 		ch=getch();
